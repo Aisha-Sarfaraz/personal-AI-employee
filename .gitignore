@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# PM2
+logs/*.log
+
+# Vault state (runtime data)
+vault/state/*.json
+
+# Vault runtime artifacts (generated during operation; not fixtures)
+vault/Logs/AUDIT_*.md
+vault/Inbox/ITEM_*.md
+vault/Inbox/GMAIL_*.md
+vault/Inbox/WA_*.md
+vault/Needs_Action/FILE_*.md
+vault/Needs_Action/GMAIL_*.md
+vault/Needs_Action/WA_*.md
+vault/Needs_Action/LEAD_*.md
+vault/Done/PLAN_*.md
+vault/Plans/PLAN_*.md
+vault/Plans/LINKEDIN_POST_*.md
+vault/Pending_Approval/APPROVAL_REQUIRED_*.md
+vault/Approved/APPROVAL_REQUIRED_*.md
+vault/Rejected/APPROVAL_REQUIRED_*.md
+vault/Quarantine/
+vault/Briefings/BRIEFING_*.md
+
+# LinkedIn session (credentials)
+vault/state/linkedin_session/
+
+# Gmail token (credentials)
+vault/.gmail_token.json

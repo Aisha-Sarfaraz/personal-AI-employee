@@ -1,0 +1,222 @@
+{
+  "main": {
+    "id": "675dc372a7de2247",
+    "type": "split",
+    "children": [
+      {
+        "id": "efaaa567fd554961",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "77824fbe6387fc51",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Pending_Approval/APPROVAL_REQUIRED_947dcf22-d29a-44ea-bfa7-65ee3ececb40.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "APPROVAL_REQUIRED_947dcf22-d29a-44ea-bfa7-65ee3ececb40"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "2dab96c11ca11675",
+    "type": "split",
+    "children": [
+      {
+        "id": "2cf39405da249828",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "b87aa237ca79c6da",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "78f0516781170b33",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "06ad645f56c51dd8",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "6b8779700e94687e",
+    "type": "split",
+    "children": [
+      {
+        "id": "f7bd334ef61fbfaa",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "319f3466be949a51",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks"
+            }
+          },
+          {
+            "id": "cf9e7a04888ced20",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links"
+            }
+          },
+          {
+            "id": "990bbd648f5fee96",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "42d11cc0d013f40f",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "05f2d2d1782e639c",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "77824fbe6387fc51",
+  "lastOpenFiles": [
+    "tmpksxzes03.tmp",
+    "Pending_Approval/APPROVAL_REQUIRED_97285e12-e2fd-40f1-8be2-9c1b6466c40d.md",
+    "tmpk_1iaws_.tmp",
+    "Done/PLAN_20260219_204908_FILE_invoice_request_1771534131.md",
+    "tmpd6xf6v7j.tmp",
+    "Logs/AUDIT_20260219T205439_execute_plan_a95793.md",
+    "Done/PLAN_20260219_205108_FILE_invoice_request_1771534255.md",
+    "Logs/AUDIT_20260219T205439_execute_plan_aea9f2.md",
+    "Logs/AUDIT_20260219T205439_execute_plan_44fd21.md",
+    "Logs/AUDIT_20260219T205439_execute_plan_9e4f17.md",
+    "tmpdtgug4z4.tmp",
+    "Logs/AUDIT_20260219T204742_orchestrator_ac2fda.md",
+    "Logs/AUDIT_20260219T204808_orchestrator_c7b3ec.md",
+    "Logs/AUDIT_20260219T205108_plan_task_5abaf2.md",
+    "tmpx6v5qlog.tmp",
+    "tmpdxf9k_nc.tmp",
+    "tmpwr6b4c0x.tmp",
+    "Logs/AUDIT_20260219T205108_execute_plan_2f1fbb.md",
+    "Plans/PLAN_20260219_205108_FILE_invoice_request_1771534255.md",
+    "Logs/AUDIT_20260219T205108_triage_inbox_0e96f5.md",
+    "Needs_Action/FILE_invoice_request_1771534255.md",
+    "Inbox/FILE_invoice_request_1771534255.md",
+    "tmp47hkisbz.tmp",
+    "tmp8jutagl0.tmp",
+    "tmp2j0ryxst.tmp",
+    "Logs/AUDIT_20260219T204908_execute_plan_992d64.md",
+    "Pending_Approval/APPROVAL_REQUIRED_947dcf22-d29a-44ea-bfa7-65ee3ececb40.md",
+    "Logs/AUDIT_20260219T204908_plan_task_be2a4a.md",
+    "Plans/PLAN_20260219_204908_FILE_invoice_request_1771534131.md",
+    "Logs/AUDIT_20260219T204908_triage_inbox_eacb34.md",
+    "Needs_Action/FILE_invoice_request_1771534131.md",
+    "Inbox/FILE_invoice_request_1771534131.md",
+    "Watch/invoice_request.txt",
+    "Pending_Approval/APPROVAL_REQUIRED_2d750e1e-7970-4d2e-8666-84735432dd8a.md",
+    "Plans/PLAN_20260218_220212_FILE_meeting_email_1771452128.md",
+    "Needs_Action/FILE_meeting_email_1771451947.md"
+  ]
+}

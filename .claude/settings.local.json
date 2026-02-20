@@ -1,0 +1,101 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash(git *)",
+      "Bash(python *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(pip *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(del /f *)"
+    ]
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "D:/gemini-cli/practice/hacathons/fte-employe"
+      ],
+      "description": "Read/write vault and project files. Scoped to project directory for security.",
+      "env": {}
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ],
+      "description": "Fetch latest documentation for frameworks, libraries, and APIs. Used by Better Auth Guardian, Next.js Frontend Architect, and all agents requiring up-to-date API references.",
+      "env": {}
+    },
+    "email-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic/email-mcp"
+      ],
+      "description": "Gmail integration: send, draft, search, and read emails. Used by Communication Agent. Requires OAuth credentials in environment.",
+      "env": {
+        "GMAIL_CLIENT_ID": "${GMAIL_CLIENT_ID}",
+        "GMAIL_CLIENT_SECRET": "${GMAIL_CLIENT_SECRET}",
+        "GMAIL_REFRESH_TOKEN": "${GMAIL_REFRESH_TOKEN}"
+      }
+    },
+    "browser-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic/browser-mcp"
+      ],
+      "description": "Browser automation: navigate, click, fill forms, take screenshots. Used by Social Media Agent for platform interaction and Finance Agent for payment portals.",
+      "env": {}
+    },
+    "calendar-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic/calendar-mcp"
+      ],
+      "description": "Google Calendar integration: create, update, delete, and list events. Used by Communication Agent for scheduling and Monitoring Agent for deadline tracking.",
+      "env": {
+        "GOOGLE_CALENDAR_CLIENT_ID": "${GOOGLE_CALENDAR_CLIENT_ID}",
+        "GOOGLE_CALENDAR_CLIENT_SECRET": "${GOOGLE_CALENDAR_CLIENT_SECRET}",
+        "GOOGLE_CALENDAR_REFRESH_TOKEN": "${GOOGLE_CALENDAR_REFRESH_TOKEN}"
+      }
+    },
+    "slack-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic/slack-mcp"
+      ],
+      "description": "Slack integration: send messages, read channels, manage threads. Used by Communication Agent for team communication.",
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+        "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
+      }
+    },
+    "odoo-mcp": {
+      "command": "python",
+      "args": [
+        "src/mcp/odoo_server.py"
+      ],
+      "description": "Odoo 19+ JSON-RPC integration: invoices, expenses, journal entries, financial reports. Used by Finance Agent for accounting operations.",
+      "env": {
+        "ODOO_URL": "${ODOO_URL}",
+        "ODOO_DB": "${ODOO_DB}",
+        "ODOO_USER": "${ODOO_USER}",
+        "ODOO_API_KEY": "${ODOO_API_KEY}"
+      }
+    }
+  }
+}
