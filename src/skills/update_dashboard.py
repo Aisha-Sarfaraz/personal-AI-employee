@@ -18,6 +18,14 @@ def _get_folder_counts(vault_root: str) -> dict[str, int]:
     return counts
 
 
+def _count_optional_folder(vault_root: str, folder: str) -> int:
+    """Count .md files in an optional vault folder; returns 0 if absent."""
+    path = os.path.join(vault_root, folder)
+    if not os.path.isdir(path):
+        return 0
+    return len([f for f in os.listdir(path) if f.endswith(".md")])
+
+
 def _get_watcher_health(vault_root: str) -> dict[str, Any]:
     """Check watcher health from state files."""
     state_dir = os.path.join(vault_root, "state")
@@ -114,6 +122,8 @@ def run(vault_root: str) -> dict[str, Any]:
     try:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
         counts = _get_folder_counts(vault_root)
+        quarantine_count = _count_optional_folder(vault_root, "Quarantine")
+        briefings_count = _count_optional_folder(vault_root, "Briefings")
         watcher_health = _get_watcher_health(vault_root)
         pending_approvals = _get_pending_approvals(vault_root)
         recent_logs = _get_recent_logs(vault_root)
@@ -127,6 +137,14 @@ def run(vault_root: str) -> dict[str, Any]:
                       "Check **Pending_Approval/** for items needing your decision. "
                       "Open any approval file and check the **Approve** or **Reject** box.\n")
         lines.append("---\n")
+
+        # Bank Balance (Documents.md §1 requirement)
+        lines.append("## 💰 Bank Balance\n")
+        lines.append("| Account | Balance | Last Updated |")
+        lines.append("|---------|---------|--------------|")
+        lines.append("| Business Checking | *update manually* | — |")
+        lines.append("| MTD Revenue | *update manually* | — |")
+        lines.append("")
 
         # System Status
         _W_EMOJI = {"running": "🟢", "error": "🔴", "not started": "⚪", "unknown": "⚪"}
@@ -145,6 +163,9 @@ def run(vault_root: str) -> dict[str, Any]:
         for folder, count in counts.items():
             lines.append(f"| {folder} | {count} |")
         lines.append(f"| **Total** | **{sum(counts.values())}** |")
+        # Silver Tier: optional folders
+        lines.append(f"| Quarantine | {quarantine_count} |")
+        lines.append(f"| Briefings | {briefings_count} |")
         lines.append("")
 
         # Pending Tasks
@@ -170,9 +191,9 @@ def run(vault_root: str) -> dict[str, Any]:
             lines.append("No pending approval requests.")
         lines.append("")
 
-        # Recent Actions
+        # Recent Activity (Documents.md naming convention)
         _S_EMOJI = {"success": "✅", "failure": "❌", "skipped": "⏭️"}
-        lines.append("## 📝 Recent Actions\n")
+        lines.append("## 📝 Recent Activity\n")
         if recent_logs:
             lines.append("| Time | Agent | Action | Status |")
             lines.append("|------|-------|--------|--------|")

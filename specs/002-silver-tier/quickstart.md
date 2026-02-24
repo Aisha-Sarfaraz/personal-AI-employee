@@ -134,18 +134,23 @@ python -c "from src.watchers.whatsapp_watcher import WhatsAppWatcher; w = WhatsA
 
 ---
 
-## Step 5 — LinkedIn via browser-mcp
+## Step 5 — LinkedIn via Playwright (direct)
 
-LinkedIn watching uses the `browser-mcp` Playwright integration already
-configured in `.claude/settings.local.json`. No API credentials are needed.
+LinkedIn uses **Playwright directly** (same pattern as WhatsApp) — no `browser-mcp` needed
+at runtime. A persistent session is saved to `vault/state/linkedin_session/` after one-time
+manual login.
 
 ### 5a. First-time login
 
 ```bash
-# browser-mcp handles the login session automatically
-# On first run the browser will open a LinkedIn login page
-# Sign in manually — the session cookie is persisted for subsequent runs
+python -c "
+from src.watchers.linkedin_watcher import LinkedInWatcher
+w = LinkedInWatcher('vault')
+w.setup_session()   # opens a browser window for manual login
+"
 ```
+
+Sign in to LinkedIn when the browser opens. The session is saved automatically.
 
 ### 5b. Verify
 
@@ -153,8 +158,8 @@ configured in `.claude/settings.local.json`. No API credentials are needed.
 python -c "from src.watchers.linkedin_watcher import LinkedInWatcher; w = LinkedInWatcher('vault'); print(w.check_for_updates())"
 ```
 
-> If the session cookie expires (typically every 30 days), re-login via the
-> browser window that browser-mcp opens automatically.
+> If the session expires (typically every 30 days), re-run `setup_session()`.
+> No credentials are stored in `.env`.
 
 ---
 
@@ -225,9 +230,9 @@ the orchestrator pick it up within 2 minutes.
 
 | Symptom | Fix |
 |---------|-----|
-| `Gmail token expired` | Delete `vault/.gmail_token.json`, re-run `gmail_auth.py` |
-| `Twilio 401 Unauthorized` | Check `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` in `.env` |
-| `browser-mcp session expired` | Re-login to LinkedIn via the browser that browser-mcp opens |
+| `Gmail token expired` | Delete `vault/.gmail_token.json`, re-run `python src/watchers/gmail_auth.py` |
+| WhatsApp session expired | Re-run `WhatsAppWatcher.setup_session()` to scan QR code again |
+| LinkedIn session expired | Re-run `LinkedInWatcher.setup_session()` to log in again |
 | `ANTHROPIC_API_KEY missing` | Set key in `.env`; or use `DEV_MODE=true` for template fallback |
 | Orchestrator not starting on boot | Re-run `python src/install_schedule.py --install` |
 | WhatsApp messages not appearing | Confirm phone sent "join &lt;sandbox-keyword&gt;" to Twilio number |

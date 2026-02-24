@@ -1,0 +1,14 @@
+{
+  "id": "li_mock_001",
+  "source": "linkedin",
+  "platform": "linkedin",
+  "type": "social_media_engagement",
+  "post_url": "https://www.linkedin.com/posts/mock-post-001",
+  "post_preview": "Excited to share our latest milestone! We just completed a major project delivery for a Fortune 500 client. The team worked incredibly hard and the results speak for themselves.",
+  "reactions": 47,
+  "comments": 12,
+  "received_at": "2026-02-22T08:00:00Z",
+  "priority": "LOW",
+  "filename": "LINKEDIN_mock_001.md",
+  "tags": ["linkedin", "engagement", "social"]
+}
