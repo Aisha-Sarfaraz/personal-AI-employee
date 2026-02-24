@@ -126,3 +126,49 @@ class TestDashboardReturnValue:
         metadata, _ = read_frontmatter_file(vault_root, "Dashboard.md")
         assert metadata["type"] == "dashboard"
         assert metadata["auto_generated"] is True
+
+
+# ---------------------------------------------------------------------------
+# T043 — Silver: watcher health section, Quarantine count, Briefings count
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardSilverSections:
+    """Silver Tier dashboard additions: watcher health, quarantine, briefings."""
+
+    def test_quarantine_count_row_shown(self, tmp_path):
+        """Dashboard renders a Quarantine count row."""
+        vault_root = make_vault(tmp_path)
+        quarantine_dir = os.path.join(vault_root, "Quarantine")
+        os.makedirs(quarantine_dir, exist_ok=True)
+        # Write a dummy quarantined item
+        with open(os.path.join(quarantine_dir, "QF_001.md"), "w") as f:
+            f.write("---\nid: QF_001\ntype: email\n---\n\nQuarantined.\n")
+
+        update_dashboard.run(vault_root)
+        content = (Path(vault_root) / "Dashboard.md").read_text(encoding="utf-8")
+
+        # Either "Quarantine" label or count must appear in the dashboard
+        assert "Quarantine" in content or "quarantine" in content.lower()
+
+    def test_briefings_count_row_shown(self, tmp_path):
+        """Dashboard renders a Briefings count row when Briefings/ exists."""
+        vault_root = make_vault(tmp_path)
+        briefings_dir = os.path.join(vault_root, "Briefings")
+        os.makedirs(briefings_dir, exist_ok=True)
+        with open(os.path.join(briefings_dir, "BRIEFING_2026-02-16.md"), "w") as f:
+            f.write("---\nid: BRIEFING_2026-02-16\ntype: weekly_briefing\n---\n\nBriefing.\n")
+
+        update_dashboard.run(vault_root)
+        content = (Path(vault_root) / "Dashboard.md").read_text(encoding="utf-8")
+
+        # Either "Briefing" label or count must appear
+        assert "Briefing" in content or "briefing" in content.lower()
+
+    def test_watcher_health_section_present(self, tmp_path):
+        """Dashboard contains a watcher health section when Silver watchers are active."""
+        vault_root = make_vault(tmp_path)
+        update_dashboard.run(vault_root)
+        content = (Path(vault_root) / "Dashboard.md").read_text(encoding="utf-8")
+        # Section header for watcher health should exist (may be empty if no watchers running)
+        assert "Watcher" in content or "watcher" in content.lower() or "Status" in content

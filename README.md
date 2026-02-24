@@ -2,7 +2,7 @@
 
 An autonomous AI business assistant that monitors your communication channels, reasons over incoming items, and takes actions on your behalf — with human-in-the-loop approval for anything sensitive.
 
-**Current tier: Bronze (Foundation Layer)**
+**Current tier: Silver (Multi-Channel AI Layer)**
 
 ---
 
@@ -32,12 +32,13 @@ vault/Dashboard.md    ← live system status
 
 | Layer | Component | Description |
 |---|---|---|
-| Perception | `FilesystemWatcher` | Polls `vault/Watch/` every 5 s, creates frontmatter-tagged `.md` items |
+| Perception | `FilesystemWatcher` + 3 Silver watchers | Polls filesystem every 5 s; Gmail/WhatsApp/LinkedIn run as concurrent daemon threads |
 | Vault | Obsidian Markdown | All state lives in human-readable `.md` files with YAML frontmatter |
-| Reasoning | Skills (`src/skills/`) | Triage, plan, execute, dashboard update — each a pure `run()` function |
+| Reasoning | Skills (`src/skills/`) | Triage, plan, execute, detect_lead, generate_plan, linkedin_post, briefing — each a pure `run()` function |
 | HITL | Approval workflow | HIGH/CRITICAL actions require file move to `vault/Approved/` |
-| Action | `action_executor.py` | `send_email`, `create_invoice`, `post_social`, `update_calendar` |
-| Orchestration | `src/orchestrator.py` | Daemon that drives the full pipeline every scan cycle |
+| Action | `action_executor.py` | `send_email` (real SMTP), `create_invoice`, `post_social`, `update_calendar` |
+| Safety | `core/` modules | Idempotency, rate limiting (20 emails/h), opt-out list, AI disclosure footer |
+| Orchestration | `src/orchestrator.py` | Daemon with 4 watcher threads + scan cycle every 120 s |
 | Health | `watchdog_monitor.py` | Auto-restarts the orchestrator if it crashes |
 
 ---
@@ -59,7 +60,25 @@ cp .env.example .env
 # Edit .env — set DEV_MODE=true to simulate all actions (default)
 ```
 
-### 3. Run
+### 3. Configure (Silver)
+
+To activate Gmail, WhatsApp, or LinkedIn watchers edit `config/settings.yaml`:
+
+```yaml
+watchers:
+  gmail:
+    enabled: true          # requires GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET in .env
+  whatsapp:
+    enabled: true          # requires running setup_session() first
+  linkedin:
+    enabled: true          # reads engagement via browser-mcp
+```
+
+To use Claude AI for plan generation, set `ANTHROPIC_API_KEY` in `.env`. Without it, the system falls back to Bronze template-based plans automatically.
+
+To send real emails (not simulated), set `DEV_MODE=false` and configure SMTP vars in `.env`.
+
+### 4. Run
 
 ```bash
 python -m src.orchestrator
@@ -77,7 +96,7 @@ You should see:
 [orchestrator] Ready. Watching for files...
 ```
 
-### 4. Test the pipeline
+### 5. Test the pipeline
 
 Drop a file into `vault/Watch/`:
 
@@ -108,7 +127,7 @@ Within seconds you'll see the file flow through the pipeline:
 
 Then open `vault/Dashboard.md` in Obsidian to see live status.
 
-### 5. Approve a pending action
+### 6. Approve a pending action
 
 Open any file in `vault/Pending_Approval/`. It shows the action details and risk level. Move it to `vault/Approved/` to execute, or `vault/Rejected/` to cancel.
 
@@ -129,36 +148,41 @@ pm2 stop fte-orchestrator
 
 ```
 src/
-  orchestrator.py          # main daemon
+  orchestrator.py          # main daemon (4 watcher threads + scan cycle)
   watchdog_monitor.py      # auto-restart monitor
   skills/
-    triage_inbox.py        # classify incoming items
-    plan_task.py           # generate action plans
-    execute_plan.py        # run plan steps + HITL gating
-    update_dashboard.py    # regenerate Dashboard.md
-    detect_lead.py         # keyword-based lead scoring
-    generate_plan.py       # Claude AI plan generation
-    generate_linkedin_post.py
-    weekly_briefing.py
-    install_schedule.py    # schedule orchestrator via cron/Task Scheduler
-    uninstall_schedule.py
+    triage_inbox.py        # classify incoming items          [Bronze]
+    plan_task.py           # template-based plan generation   [Bronze]
+    execute_plan.py        # run plan steps + HITL gating     [Bronze+]
+    update_dashboard.py    # regenerate Dashboard.md          [Bronze+]
+    check_handbook.py      # handbook compliance check        [Bronze]
+    detect_lead.py         # keyword lead scoring → CRITICAL  [Silver]
+    generate_plan.py       # Claude AI plan generation        [Silver]
+    generate_linkedin_post.py  # AI draft + HIGH HITL        [Silver]
+    weekly_briefing.py     # weekly CEO briefing to vault     [Silver]
+    install_schedule.py    # register cron/Task Scheduler     [Silver]
+    uninstall_schedule.py  # remove scheduled tasks           [Silver]
   watchers/
-    filesystem_watcher.py  # active (Bronze)
-    gmail_watcher.py       # Silver (disabled by default)
-    whatsapp_watcher.py    # Silver (disabled by default)
-    linkedin_watcher.py    # Silver (disabled by default)
+    filesystem_watcher.py  # polls vault/Watch/               [Bronze]
+    gmail_watcher.py       # Gmail OAuth2 polling             [Silver]
+    whatsapp_watcher.py    # WhatsApp Web via Playwright       [Silver]
+    linkedin_watcher.py    # LinkedIn engagement reader        [Silver]
   actions/
-    action_executor.py     # send_email, create_invoice, post_social, ...
+    action_executor.py     # send_email (SMTP), create_invoice, post_social, ...
   core/
-    vault.py               # vault read/write helpers
-    audit_logger.py        # structured audit entries
-    approval.py            # HITL approval detection
-    idempotency.py         # dedup store (Silver)
-    rate_limiter.py        # per-action rate limits (Silver)
-    opt_out.py             # email opt-out list (Silver)
+    vault.py               # vault read/write helpers         [Bronze]
+    audit_logger.py        # structured audit entries         [Bronze]
+    approval.py            # HITL approval detection          [Bronze]
+    frontmatter.py         # YAML frontmatter parsing         [Bronze]
+    idempotency.py         # dedup key store                  [Silver]
+    rate_limiter.py        # per-action rate caps             [Silver]
+    opt_out.py             # email opt-out enforcement        [Silver]
 
 vault/                     # Obsidian vault (your working memory)
   Watch/                   # drop files here
+    gmail_mock/            # mock Gmail items for dev/test
+    whatsapp_mock/         # mock WhatsApp messages
+    linkedin_mock/         # mock LinkedIn engagement
   Inbox/                   # auto-triaged items
   Needs_Action/            # awaiting planning
   Plans/                   # generated plans
@@ -167,11 +191,15 @@ vault/                     # Obsidian vault (your working memory)
   Rejected/                # rejected → terminal
   Done/                    # completed items
   Logs/                    # audit trail
-  Dashboard.md             # live status
+  Briefings/               # weekly CEO briefings             [Silver]
+  Quarantine/              # items that failed 3+ times       [Silver]
+  Opt_Out_List.md          # email addresses to never contact [Silver]
+  Templates/               # LinkedIn post prompt templates   [Silver]
+  Dashboard.md             # live system status
 
 specs/
   001-bronze-tier/         # Bronze spec, plan, tasks
-  002-silver-tier/         # Silver spec, plan, tasks
+  002-silver-tier/         # Silver spec, plan, tasks, contracts, data-model
 
 config/
   settings.yaml            # watcher config, intervals, vault paths
@@ -196,11 +224,17 @@ Key env vars in `.env`:
 
 | Variable | Description |
 |---|---|
-| `DEV_MODE` | `true` = simulate all actions, no real sends |
+| `DEV_MODE` | `true` = simulate all actions, no real sends (default) |
 | `DRY_RUN` | `true` = read-only, no vault writes |
-| `ANTHROPIC_API_KEY` | Claude AI for plan generation (Silver) |
-| `SMTP_HOST/PORT/USER/PASSWORD` | Real email send (Silver, requires `DEV_MODE=false`) |
-| `GMAIL_CLIENT_ID/SECRET` | Gmail OAuth2 (Silver) |
+| `ANTHROPIC_API_KEY` | Claude AI for plan generation; falls back to templates if absent |
+| `ANTHROPIC_PLAN_MODEL` | Model for planning (default: `claude-haiku-4-5-20251001`) |
+| `SMTP_HOST` | SMTP server for real email sends (e.g. `smtp.gmail.com`) |
+| `SMTP_PORT` | SMTP port (default: `587`) |
+| `SMTP_USER` | SMTP login address |
+| `SMTP_PASSWORD` | SMTP app password |
+| `SMTP_FROM` | Display from address |
+| `GMAIL_CLIENT_ID` | Gmail OAuth2 client ID |
+| `GMAIL_CLIENT_SECRET` | Gmail OAuth2 client secret |
 
 ---
 
@@ -221,6 +255,54 @@ python -m pytest tests/test_execute_plan.py -v
 
 ---
 
+## Silver Tier — What's New
+
+Silver adds multi-channel perception, AI reasoning, and safety infrastructure on top of the unchanged Bronze foundation.
+
+### New Skills
+
+| Skill | Description |
+|---|---|
+| `detect_lead.py` | Scores items for buying signals (keywords: budget, quote, demo, partnership…). Items scoring ≥ 2 are upgraded to `type: lead`, `priority: CRITICAL` and routed to a lead response plan |
+| `generate_plan.py` | Calls Claude API to generate plans with intent summary, step rationale, and a `## Reasoning` trace. Falls back to Bronze templates when `ANTHROPIC_API_KEY` is absent or `DEV_MODE=true` |
+| `generate_linkedin_post.py` | AI-drafted LinkedIn post with HIGH HITL approval gate. All posts include `#AIAssisted` tag |
+| `weekly_briefing.py` | Aggregates vault audit logs into `vault/Briefings/BRIEFING_<date>.md` — items by channel, leads, emails sent, LinkedIn posts, approvals, quarantined items, next-week recommendations |
+| `install_schedule.py` | Registers orchestrator at system startup + weekly briefing at Monday 08:00 via Windows Task Scheduler or crontab. Idempotent — safe to run multiple times |
+
+### New Watchers (disabled by default)
+
+| Watcher | Enable | Description |
+|---|---|---|
+| `GmailWatcher` | `watchers.gmail.enabled: true` | OAuth2 polling; uses `message_id` for dedup; token auto-refreshes |
+| `WhatsAppWatcher` | `watchers.whatsapp.enabled: true` | WhatsApp Web via Playwright; requires `setup_session()` first |
+| `LinkedInWatcher` | `watchers.linkedin.enabled: true` | Reads post engagement metrics via browser-mcp |
+
+### New Safety Infrastructure
+
+| Module | Description |
+|---|---|
+| `core/idempotency.py` | Content-hash dedup store — prevents duplicate email sends or posts across restarts |
+| `core/rate_limiter.py` | Caps sends per hour: 20 emails, 5 LinkedIn posts, 10 invoices |
+| `core/opt_out.py` | Checks `vault/Opt_Out_List.md` before every outbound email |
+| AI footer | `"This message was drafted with AI assistance."` appended to every outbound email |
+| Quarantine | Plans that fail 3+ times are moved to `vault/Quarantine/` with a MEDIUM audit entry |
+| Queue drain | Queued (rate-limited) actions are retried on the next scan cycle |
+
+### New Vault Folders
+
+```
+vault/Briefings/     ← weekly CEO briefing documents
+vault/Quarantine/    ← plans isolated after 3 failures
+vault/Opt_Out_List.md
+vault/Templates/     ← LinkedIn post prompt templates
+vault/Watch/
+  gmail_mock/        ← sample items for Gmail dev/test
+  whatsapp_mock/     ← sample items for WhatsApp dev/test
+  linkedin_mock/     ← sample items for LinkedIn dev/test
+```
+
+---
+
 ## Bronze Tier Success Criteria
 
 | ID | Criterion | Status |
@@ -234,6 +316,22 @@ python -m pytest tests/test_execute_plan.py -v
 | SC-007 | Re-running executor on same plan does not duplicate approval requests | ✅ |
 | SC-008 | `pm2 start ecosystem.config.js` keeps orchestrator running as daemon | ✅ |
 | SC-009 | Silver/Gold stub watchers exist as importable classes | ✅ |
+
+## Silver Tier Success Criteria
+
+| ID | Criterion | Status |
+|---|---|---|
+| SC-010 | Gmail watcher processes mock items without errors | ✅ |
+| SC-011 | WhatsApp watcher processes mock messages without errors | ✅ |
+| SC-012 | Four concurrent watcher threads running (filesystem + 3 Silver) | ✅ |
+| SC-013 | Lead detection end-to-end: buying-signal item → CRITICAL plan → email approval | ✅ |
+| SC-014 | Real email send via SMTP (gated on `DEV_MODE=false` + SMTP config) | ✅ |
+| SC-015 | LinkedIn post drafted, approved via HITL, marked published | ✅ |
+| SC-016 | Claude plan reasoning: plans include `## Reasoning` section when API key present | ✅ |
+| SC-017 | Weekly briefing written to `vault/Briefings/BRIEFING_<date>.md` | ✅ |
+| SC-018 | `install_schedule.py` registers tasks idempotently; `uninstall_schedule.py` removes them | ✅ |
+| SC-019 | Item with `failure_count >= 3` is quarantined, not retried indefinitely | ✅ |
+| SC-020 | All 531 tests pass; coverage ≥ 70% | ✅ |
 
 ---
 

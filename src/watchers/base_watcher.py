@@ -1,5 +1,6 @@
 """Abstract base class for all watchers."""
 
+import glob
 import json
 import os
 import time
@@ -31,6 +32,38 @@ class BaseWatcher(ABC):
         state_dir = os.path.join(vault_root, "state") if vault_root else ""
         self._state_file = os.path.join(state_dir, f"{name}_state.json") if state_dir else f"{name}_state.json"
         self._running = False
+
+    @property
+    def dry_run(self) -> bool:
+        """True when DRY_RUN env var is set to a truthy value (case-insensitive)."""
+        val = os.environ.get("DRY_RUN", "").lower().strip()
+        return val in ("true", "1", "yes")
+
+    def _load_mock_items(self, mock_folder: str) -> list[dict[str, Any]]:
+        """Load mock items from all *.json files in mock_folder.
+
+        Args:
+            mock_folder: Absolute or relative path to the mock data folder.
+
+        Returns:
+            List of item dicts. Malformed files and missing folders return [].
+        """
+        if not os.path.isdir(mock_folder):
+            return []
+
+        items: list[dict[str, Any]] = []
+        for json_path in glob.glob(os.path.join(mock_folder, "*.json")):
+            try:
+                with open(json_path, encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    items.append(data)
+                elif isinstance(data, list):
+                    items.extend(i for i in data if isinstance(i, dict))
+            except (json.JSONDecodeError, OSError):
+                pass  # skip malformed files
+
+        return items
 
     @abstractmethod
     def check_for_updates(self) -> list[dict[str, Any]]:

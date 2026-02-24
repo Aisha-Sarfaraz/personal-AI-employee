@@ -39,6 +39,22 @@ PLAN_TEMPLATES: dict[str, list[dict[str, Any]]] = {
         {"action_type": "file_operation", "description": "Review unknown item", "risk_level": "LOW", "requires_approval": False},
         {"action_type": "file_operation", "description": "Classify and process item", "risk_level": "MEDIUM", "requires_approval": False},
     ],
+    # Silver Tier templates (T029)
+    "lead": [
+        {"action_type": "file_operation", "description": "Review lead details and qualify", "risk_level": "LOW", "requires_approval": False},
+        {"action_type": "file_operation", "description": "Draft personalised response", "risk_level": "LOW", "requires_approval": False},
+        {"action_type": "send_email", "description": "Send response to lead", "risk_level": "HIGH", "requires_approval": True},
+        {"action_type": "file_operation", "description": "Tag lead in CRM tracker", "risk_level": "LOW", "requires_approval": False},
+    ],
+    "linkedin_post": [
+        {"action_type": "file_operation", "description": "Review post content for compliance", "risk_level": "LOW", "requires_approval": False},
+        {"action_type": "post_social", "description": "Publish post to LinkedIn", "risk_level": "HIGH", "requires_approval": True},
+        {"action_type": "file_operation", "description": "Record post in engagement log", "risk_level": "LOW", "requires_approval": False},
+    ],
+    "social_media_engagement": [
+        {"action_type": "file_operation", "description": "Summarise engagement metrics", "risk_level": "LOW", "requires_approval": False},
+        {"action_type": "file_operation", "description": "Update engagement tracker in vault", "risk_level": "LOW", "requires_approval": False},
+    ],
 }
 
 

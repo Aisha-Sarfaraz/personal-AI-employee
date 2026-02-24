@@ -19,8 +19,30 @@ sys.stdout.reconfigure(line_buffering=True)
 
 from src.core.audit_logger import log_action
 from src.skills import triage_inbox, plan_task, execute_plan, update_dashboard
+from src.skills import detect_lead, generate_plan, generate_linkedin_post, weekly_briefing
 from src.watchers.filesystem_watcher import FilesystemWatcher
 from src.watchdog_monitor import WatchdogMonitor
+
+try:
+    from src.watchers.gmail_watcher import GmailWatcher
+    _GMAIL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _GMAIL_AVAILABLE = False
+    GmailWatcher = None  # type: ignore[assignment,misc]
+
+try:
+    from src.watchers.whatsapp_watcher import WhatsAppWatcher
+    _WHATSAPP_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _WHATSAPP_AVAILABLE = False
+    WhatsAppWatcher = None  # type: ignore[assignment,misc]
+
+try:
+    from src.watchers.linkedin_watcher import LinkedInWatcher
+    _LINKEDIN_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _LINKEDIN_AVAILABLE = False
+    LinkedInWatcher = None  # type: ignore[assignment,misc]
 
 
 class Orchestrator:
@@ -33,6 +55,8 @@ class Orchestrator:
         self._scan_interval = self._config.get("orchestrator", {}).get("scan_interval", 30)
         self._watchers: dict[str, Any] = {}
         self._watcher_threads: dict[str, threading.Thread] = {}
+        self._watcher_health: dict[str, Any] = {}
+        self._health_lock = threading.Lock()
         self._monitor: WatchdogMonitor | None = None
         self._monitor_thread: threading.Thread | None = None
 
@@ -50,6 +74,34 @@ class Orchestrator:
         # Also ensure state dir
         state_dir = os.path.join(self._vault_root, self._config.get("vault", {}).get("state_dir", "state"))
         os.makedirs(state_dir, exist_ok=True)
+        # Silver Tier: additional folders
+        for silver_folder in ("Briefings", "Quarantine", "Templates",
+                               os.path.join("Watch", "gmail_mock"),
+                               os.path.join("Watch", "whatsapp_mock"),
+                               os.path.join("Watch", "linkedin_mock")):
+            os.makedirs(os.path.join(self._vault_root, silver_folder), exist_ok=True)
+
+    def _watcher_loop(self, watcher: Any, name: str) -> None:
+        """Run a watcher in a loop, updating health on each poll."""
+        while True:
+            try:
+                items = watcher.check_for_updates() if hasattr(watcher, "check_for_updates") else []
+                with self._health_lock:
+                    self._watcher_health[name] = {
+                        "status": "running",
+                        "last_poll": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "items_this_cycle": len(items) if items else 0,
+                    }
+            except Exception as exc:
+                with self._health_lock:
+                    self._watcher_health[name] = {
+                        "status": "ERROR",
+                        "last_poll": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "items_this_cycle": 0,
+                        "error": str(exc),
+                    }
+            poll_interval = getattr(watcher, "poll_interval", 120)
+            time.sleep(poll_interval)
 
     def _init_watchers(self) -> None:
         """Initialize watcher registry."""
@@ -64,14 +116,53 @@ class Orchestrator:
             )
             self._watchers["filesystem_watcher"] = watcher
 
+        # Silver Tier: Gmail watcher
+        if _GMAIL_AVAILABLE and watcher_config.get("gmail", {}).get("enabled", False):
+            gm_cfg = watcher_config.get("gmail", {})
+            gmail_watcher = GmailWatcher(
+                vault_root=self._vault_root,
+                poll_interval=gm_cfg.get("poll_interval", 120),
+                gmail_mock_dir=gm_cfg.get("mock_folder", ""),
+            )
+            self._watchers["gmail_watcher"] = gmail_watcher
+
+        # Silver Tier: WhatsApp watcher
+        if _WHATSAPP_AVAILABLE and watcher_config.get("whatsapp", {}).get("enabled", False):
+            wa_cfg = watcher_config.get("whatsapp", {})
+            whatsapp_watcher = WhatsAppWatcher(
+                vault_root=self._vault_root,
+                poll_interval=wa_cfg.get("poll_interval", 120),
+                whatsapp_mock_dir=wa_cfg.get("mock_folder", ""),
+            )
+            self._watchers["whatsapp_watcher"] = whatsapp_watcher
+
+        # Silver Tier: LinkedIn watcher
+        if _LINKEDIN_AVAILABLE and watcher_config.get("linkedin", {}).get("enabled", False):
+            li_cfg = watcher_config.get("linkedin", {})
+            linkedin_watcher = LinkedInWatcher(
+                vault_root=self._vault_root,
+                poll_interval=li_cfg.get("poll_interval", 3600),
+                linkedin_mock_dir=li_cfg.get("mock_folder", ""),
+                username=li_cfg.get("username", ""),
+            )
+            self._watchers["linkedin_watcher"] = linkedin_watcher
+
     def _start_watchers(self) -> None:
         """Start all watchers as daemon threads."""
         for name, watcher in self._watchers.items():
             if hasattr(watcher, "start_observer"):
                 watcher.start_observer()
+            # Silver watchers (GmailWatcher, WhatsAppWatcher, LinkedInWatcher) use _watcher_loop;
+            # FilesystemWatcher uses its own .run() with vault_root arg.
+            if hasattr(watcher, "check_for_updates") and not hasattr(watcher, "run"):
+                target = self._watcher_loop
+                args = (watcher, name)
+            else:
+                target = watcher.run
+                args = (self._vault_root,)
             thread = threading.Thread(
-                target=watcher.run,
-                args=(self._vault_root,),
+                target=target,
+                args=args,
                 name=f"watcher-{name}",
                 daemon=True,
             )
@@ -104,7 +195,7 @@ class Orchestrator:
             signal.signal(signal.SIGTERM, shutdown_handler)
 
     def _scan_cycle(self) -> None:
-        """Run one scan cycle: triage → plan → execute → dashboard."""
+        """Run one scan cycle: triage → detect_lead → generate_plan → execute → Silver skills → dashboard."""
         # Debug: show inbox count before triage
         inbox_path = os.path.join(self._vault_root, "Inbox")
         inbox_files = [f for f in os.listdir(inbox_path) if f.endswith(".md")] if os.path.isdir(inbox_path) else []
@@ -118,8 +209,17 @@ class Orchestrator:
         except Exception as e:
             print(f"  [triage]    ERROR: {e}")
 
+        # Silver Tier: detect leads after triage
         try:
-            plan_result = plan_task.run(self._vault_root)
+            lead_result = detect_lead.run(self._vault_root)
+            if lead_result.get("leads_detected", 0) > 0:
+                print(f"  [detect_lead] leads={lead_result['leads_detected']}")
+        except Exception as e:
+            print(f"  [detect_lead] ERROR: {e}")
+
+        # Silver Tier: generate_plan replaces plan_task in scan cycle
+        try:
+            plan_result = generate_plan.run(self._vault_root)
             if plan_result.get("processed", 0) > 0:
                 print(f"  [plan]      processed={plan_result['processed']}")
         except Exception as e:
@@ -132,8 +232,20 @@ class Orchestrator:
         except Exception as e:
             print(f"  [execute]   ERROR: {e}")
 
+        # Silver Tier: LinkedIn post generator (self-guarded by cadence + enabled flag)
         try:
-            dashboard_result = update_dashboard.run(self._vault_root)
+            generate_linkedin_post.run(self._vault_root)
+        except Exception as e:
+            print(f"  [linkedin_post] ERROR: {e}")
+
+        # Silver Tier: weekly briefing (self-guarded: runs only on Monday)
+        try:
+            weekly_briefing.run(self._vault_root)
+        except Exception as e:
+            print(f"  [briefing]  ERROR: {e}")
+
+        try:
+            update_dashboard.run(self._vault_root)
         except Exception as e:
             print(f"  [dashboard] ERROR: {e}")
 

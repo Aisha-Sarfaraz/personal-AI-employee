@@ -2,13 +2,93 @@
 
 import os
 import re
-from datetime import datetime, timezone
+import yaml as _yaml
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.core.vault import list_folder, read_frontmatter_file, write_frontmatter_file, move_file
 from src.core.approval import create_approval_request, check_approval_status
 from src.core.audit_logger import log_action
 from src.actions.action_executor import execute_action
+
+
+def _drain_queue(vault_root: str) -> None:
+    """Process queued actions and drop stale ones (older than 24 h)."""
+    queue_dir = os.path.join(vault_root, "Queue")
+    if not os.path.isdir(queue_dir):
+        return
+
+    now = datetime.now(timezone.utc)
+    for fname in list(os.listdir(queue_dir)):
+        if not fname.endswith((".yaml", ".yml")):
+            continue
+        fpath = os.path.join(queue_dir, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                entry = _yaml.safe_load(f)
+            if not isinstance(entry, dict):
+                os.remove(fpath)
+                continue
+
+            queued_at_str = str(entry.get("queued_at", ""))
+            if queued_at_str:
+                queued_at = datetime.fromisoformat(queued_at_str.replace("Z", "+00:00"))
+                if queued_at.tzinfo is None:
+                    queued_at = queued_at.replace(tzinfo=timezone.utc)
+                if (now - queued_at).total_seconds() > 24 * 3600:
+                    os.remove(fpath)
+                    continue
+
+            # Attempt to execute the queued action
+            action_type = entry.get("action_type", "")
+            details = entry.get("details", {}) or {}
+            plan_id = entry.get("plan_id", "")
+            if action_type:
+                try:
+                    execute_action(action_type, details, vault_root=vault_root, plan_id=plan_id)
+                except Exception:
+                    pass
+            os.remove(fpath)
+        except Exception:
+            pass
+
+
+def _maybe_quarantine(
+    vault_root: str,
+    filepath: str,
+    metadata: dict,
+    body: str,
+    filename: str,
+) -> bool:
+    """Move a plan to Quarantine/ if it has >= 3 failures. Returns True if quarantined."""
+    failure_count = int(metadata.get("failure_count", 0))
+    if failure_count < 3:
+        return False
+
+    quarantine_dir = os.path.join(vault_root, "Quarantine")
+    os.makedirs(quarantine_dir, exist_ok=True)
+    metadata["status"] = "quarantined"
+    write_frontmatter_file(vault_root, filepath, metadata, body)
+    try:
+        move_file(vault_root, filepath, os.path.join("Quarantine", filename))
+    except Exception:
+        pass
+
+    try:
+        log_action(
+            vault_root=vault_root,
+            agent="execute_plan",
+            action="quarantine",
+            risk_tier="MEDIUM",
+            status="warning",
+            details=(
+                f"Plan {metadata.get('id', filename)} quarantined after {failure_count} failures"
+            ),
+        )
+    except Exception:
+        pass
+
+    return True
 
 
 def _parse_steps_from_body(body: str) -> list[dict[str, Any]]:
@@ -63,12 +143,20 @@ def run(vault_root: str) -> dict[str, Any]:
     errors: list[str] = []
     skipped = 0
 
+    # Silver Tier: drain queued actions before processing plans
+    _drain_queue(vault_root)
+
     plan_files = list_folder(vault_root, "Plans")
 
     for filename in plan_files:
         try:
             filepath = os.path.join("Plans", filename)
             metadata, body = read_frontmatter_file(vault_root, filepath)
+
+            # Silver Tier: quarantine plans with too many failures
+            if _maybe_quarantine(vault_root, filepath, metadata, body, filename):
+                skipped += 1
+                continue
 
             plan_status = metadata.get("status", "")
             if plan_status not in ("pending", "executing"):

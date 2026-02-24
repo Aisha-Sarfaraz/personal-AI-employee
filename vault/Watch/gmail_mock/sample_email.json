@@ -1,0 +1,15 @@
+{
+  "id": "gmail_mock_001",
+  "source": "gmail",
+  "subject": "Interested in your pricing for Q1 project",
+  "from_address": "client@example.com",
+  "to_address": "me@mybusiness.com",
+  "message_id": "<mock-001@gmail.example.com>",
+  "received_at": "2026-02-22T09:00:00Z",
+  "thread_id": "thread_mock_001",
+  "body": "Hi, I came across your work and I am very interested in your pricing for a Q1 project. Could you send me a proposal? We have a budget of around $5,000 and need the work done by end of February. Please quote me as soon as possible.",
+  "type": "email",
+  "priority": "HIGH",
+  "filename": "GMAIL_mock_001.md",
+  "tags": ["gmail", "lead", "pricing"]
+}

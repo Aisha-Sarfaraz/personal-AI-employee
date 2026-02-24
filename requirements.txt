@@ -3,3 +3,21 @@ pyyaml>=6.0
 python-dotenv>=1.0.0
 pytest>=7.0.0
 pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+
+# Silver: WhatsApp Web automation
+playwright>=1.40.0
+
+# Silver: Gmail API
+google-auth>=2.0.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.0.0
+
+# Silver: Claude AI planning
+anthropic>=0.40.0
+
+# Silver: MCP SDK
+mcp>=1.0.0
+
+# Silver: HTTP requests
+requests>=2.31.0
