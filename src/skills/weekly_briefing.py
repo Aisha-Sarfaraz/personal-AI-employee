@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import glob
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -57,6 +58,175 @@ def _count_by_action(entries: list[dict], keyword: str) -> int:
     return sum(1 for e in entries if keyword in str(e.get("action", "")))
 
 
+def _load_json_logs_for_social(vault_root: str) -> list[dict[str, Any]]:
+    """Load Gold JSON-Lines log entries from vault/Logs/*.json for social action counting."""
+    logs_dir = os.path.join(vault_root, "Logs")
+    if not os.path.isdir(logs_dir):
+        return []
+    entries: list[dict[str, Any]] = []
+    for log_file in glob.glob(os.path.join(logs_dir, "*.json")):
+        try:
+            with open(log_file, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entries.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+        except OSError:
+            pass
+    return entries
+
+
+def _count_social_posts(vault_root: str) -> dict[str, int]:
+    """Count social posts from Gold JSON-Lines audit logs."""
+    social_types = {"post_facebook", "post_twitter", "generate_linkedin_post", "post_linkedin"}
+    entries = _load_json_logs_for_social(vault_root)
+    counts: dict[str, int] = {k: 0 for k in social_types}
+    for entry in entries:
+        action_type = entry.get("action_type", "")
+        if action_type in social_types:
+            counts[action_type] = counts.get(action_type, 0) + 1
+    return counts
+
+
+def _get_bottleneck_info(vault_root: str, sla_hours: int = 48) -> str:
+    """Analyse Done/ items for SLA breaches (completed_at - created_at > sla_hours)."""
+    done_dir = os.path.join(vault_root, "Done")
+    if not os.path.isdir(done_dir):
+        return "- No completed tasks this week."
+
+    breaches: list[str] = []
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+
+    for md_file in glob.glob(os.path.join(done_dir, "*.md")):
+        try:
+            with open(md_file, encoding="utf-8") as f:
+                content = f.read()
+            parts = content.split("---", 2)
+            if len(parts) < 3:
+                continue
+            meta = yaml.safe_load(parts[1])
+            if not isinstance(meta, dict):
+                continue
+            created_str = meta.get("created_at") or meta.get("timestamp", "")
+            completed_str = meta.get("completed_at", "")
+            if created_str and completed_str:
+                created = datetime.fromisoformat(str(created_str).replace("Z", "+00:00"))
+                completed = datetime.fromisoformat(str(completed_str).replace("Z", "+00:00"))
+                delta_hours = (completed - created).total_seconds() / 3600
+                if delta_hours > sla_hours:
+                    item_id = meta.get("id", os.path.basename(md_file))
+                    breaches.append(
+                        f"- `{item_id}` took {delta_hours:.1f}h (SLA: {sla_hours}h)"
+                    )
+        except Exception:
+            continue
+
+    if breaches:
+        return "\n".join(breaches[:5])  # top 5
+    return "- No SLA breaches this week."
+
+
+def _generate_gold_sections(vault_root: str) -> str:
+    """Generate the 5 new Gold Tier sections for the weekly briefing."""
+    from src.skills import accounting_audit
+
+    # Run accounting audit (degrades gracefully on Odoo error)
+    try:
+        audit_result = accounting_audit.run(vault_root)
+    except Exception:
+        audit_result = {
+            "revenue": None, "expenses": None, "suggestions": [],
+            "error": "accounting_audit failed", "degraded": True,
+        }
+
+    degraded = audit_result.get("degraded", False)
+    unavailable_msg = "[Data unavailable — Odoo offline]"
+
+    # -- Revenue --
+    if degraded or audit_result.get("revenue") is None:
+        revenue_content = f"- MTD Total: {unavailable_msg}\n- Weekly Paid: {unavailable_msg}"
+    else:
+        rev = audit_result["revenue"]
+        revenue_content = (
+            f"- MTD Total: **${rev.get('mtd_total', 0.0):.2f}**\n"
+            f"- Weekly Paid: **${rev.get('weekly_paid', 0.0):.2f}**"
+        )
+
+    # -- Expenses --
+    if degraded or audit_result.get("expenses") is None:
+        expenses_content = f"- Top Categories: {unavailable_msg}"
+    else:
+        exp = audit_result["expenses"]
+        top_cats = exp.get("top_categories", [])
+        if top_cats:
+            cat_lines = "\n".join(
+                f"  - **{c['category']}**: ${c['total']:.2f}"
+                for c in top_cats[:5]
+            )
+            expenses_content = f"**Top 5 Expense Categories:**\n\n{cat_lines}"
+        else:
+            expenses_content = "- No expense data available."
+
+    # -- Bottleneck --
+    bottleneck_content = _get_bottleneck_info(vault_root)
+
+    # -- Proactive Suggestions --
+    suggestions = audit_result.get("suggestions", [])
+    if suggestions:
+        suggestions_content = "\n".join(f"- {s}" for s in suggestions[:5])
+    elif degraded:
+        suggestions_content = f"- {unavailable_msg}"
+    else:
+        suggestions_content = "- No flagged items this week."
+
+    # -- Social Summary --
+    social_counts = _count_social_posts(vault_root)
+    total_social = sum(social_counts.values())
+    linkedin_count = social_counts.get("generate_linkedin_post", 0) + social_counts.get("post_linkedin", 0)
+    fb_count = social_counts.get("post_facebook", 0)
+    tw_count = social_counts.get("post_twitter", 0)
+    social_content = (
+        f"- LinkedIn posts: **{linkedin_count}**\n"
+        f"- Facebook posts: **{fb_count}**\n"
+        f"- Twitter posts: **{tw_count}**\n"
+        f"- Total social actions: **{total_social}**"
+    )
+
+    return f"""## Revenue
+
+{revenue_content}
+
+---
+
+## Expenses
+
+{expenses_content}
+
+---
+
+## Bottleneck
+
+{bottleneck_content}
+
+---
+
+## Proactive Suggestions
+
+{suggestions_content}
+
+---
+
+## Social Summary
+
+{social_content}
+
+---
+"""
+
+
 def _generate_briefing_body(
     vault_root: str,
     week_start: date,
@@ -91,6 +261,9 @@ def _generate_briefing_body(
     channel_list = "\n".join(
         f"  - **{agent}**: {count} actions" for agent, count in sorted(channels.items())
     ) or "  - No activity logged this week"
+
+    # Gold Tier: generate 5 new sections
+    gold_sections = _generate_gold_sections(vault_root)
 
     body = f"""## 📅 Date Range
 
@@ -147,6 +320,8 @@ def _generate_briefing_body(
 {recommendations}
 
 ---
+
+{gold_sections}
 
 *Generated automatically by weekly_briefing skill.*
 """

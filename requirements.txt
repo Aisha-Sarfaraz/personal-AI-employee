@@ -21,3 +21,9 @@ mcp>=1.0.0
 
 # Silver: HTTP requests
 requests>=2.31.0
+
+# Gold: Twitter API v2
+tweepy>=4.14.0
+
+# Gold: async test support for MCP server tests
+pytest-asyncio>=0.23.0

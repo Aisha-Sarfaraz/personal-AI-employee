@@ -179,6 +179,50 @@ def _install_posix(vault_root: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Gold Tier: Stop Hook Registration
+# ---------------------------------------------------------------------------
+
+_STOP_HOOK_CONTENT = (
+    "#!/usr/bin/env python3\n"
+    "import subprocess, sys\n"
+    "sys.exit(subprocess.call([\"python\", \"hooks/stop_hook.py\"]))\n"
+)
+
+
+def _register_stop_hook(vault_root: str, project_root: str | None = None) -> bool:
+    """Write .claude/hooks/Stop and register the stop hook.
+
+    Idempotent: skips if content already matches.
+    Returns True if newly registered, False if already present (idempotent).
+
+    Args:
+        vault_root: Absolute path to vault directory (unused; kept for signature compatibility).
+        project_root: Project root where .claude/ should be created. Defaults to _PROJECT_ROOT.
+    """
+    if project_root is None:
+        project_root = _PROJECT_ROOT
+
+    hooks_dir = os.path.join(project_root, ".claude", "hooks")
+    os.makedirs(hooks_dir, exist_ok=True)
+    hook_path = os.path.join(hooks_dir, "Stop")
+
+    # Idempotent: check if already registered with same content
+    if os.path.exists(hook_path):
+        try:
+            with open(hook_path, encoding="utf-8") as f:
+                existing = f.read()
+            if existing == _STOP_HOOK_CONTENT:
+                return False  # already registered, no change needed
+        except OSError:
+            pass
+
+    with open(hook_path, "w", encoding="utf-8") as f:
+        f.write(_STOP_HOOK_CONTENT)
+
+    return True
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -193,6 +237,12 @@ def run(vault_root: str) -> dict[str, Any]:
         Result dict: {processed, platform, tasks_created, tasks_updated, errors, skipped}
     """
     print("[install_schedule] Registering scheduled tasks…")
+
+    # Register stop hook (idempotent)
+    try:
+        _register_stop_hook(vault_root)
+    except Exception:
+        pass  # Never let hook registration block scheduling
 
     if sys.platform == "win32":
         result = _install_windows(vault_root)

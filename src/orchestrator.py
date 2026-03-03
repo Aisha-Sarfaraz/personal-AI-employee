@@ -44,6 +44,44 @@ except ImportError:  # pragma: no cover
     _LINKEDIN_AVAILABLE = False
     LinkedInWatcher = None  # type: ignore[assignment,misc]
 
+# Gold Tier imports (graceful fallback)
+try:
+    from src.watchers.finance_watcher import FinanceWatcher
+    _FINANCE_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _FINANCE_AVAILABLE = False
+    FinanceWatcher = None  # type: ignore[assignment,misc]
+
+try:
+    from src.watchers.facebook_watcher import FacebookWatcher
+    _FACEBOOK_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _FACEBOOK_AVAILABLE = False
+    FacebookWatcher = None  # type: ignore[assignment,misc]
+
+try:
+    from src.watchers.twitter_watcher import TwitterWatcher
+    _TWITTER_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _TWITTER_AVAILABLE = False
+    TwitterWatcher = None  # type: ignore[assignment,misc]
+
+try:
+    from src.watchers.watchdog import Watchdog as WatchdogGold
+    _WATCHDOG_GOLD_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _WATCHDOG_GOLD_AVAILABLE = False
+    WatchdogGold = None  # type: ignore[assignment,misc]
+
+try:
+    from src.core.audit_logger import archive_old_logs
+    from src.core.ralph_loop import RalphLoop
+    _RALPH_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _RALPH_AVAILABLE = False
+    RalphLoop = None  # type: ignore[assignment,misc]
+    archive_old_logs = None  # type: ignore[assignment,misc]
+
 
 class Orchestrator:
     """Main orchestrator process coordinating watchers and skills."""
@@ -80,6 +118,14 @@ class Orchestrator:
                                os.path.join("Watch", "whatsapp_mock"),
                                os.path.join("Watch", "linkedin_mock")):
             os.makedirs(os.path.join(self._vault_root, silver_folder), exist_ok=True)
+        # Gold Tier: additional folders
+        for gold_folder in ("Accounting", "Needs_Action", "Pending_Approval",
+                             os.path.join("Watch", "finance_mock"),
+                             os.path.join("Watch", "finance_drop"),
+                             os.path.join("Watch", "facebook_mock"),
+                             os.path.join("Watch", "twitter_mock"),
+                             os.path.join("Logs", "Archive")):
+            os.makedirs(os.path.join(self._vault_root, gold_folder), exist_ok=True)
 
     def _watcher_loop(self, watcher: Any, name: str) -> None:
         """Run a watcher in a loop, updating health on each poll."""
@@ -146,6 +192,33 @@ class Orchestrator:
                 username=li_cfg.get("username", ""),
             )
             self._watchers["linkedin_watcher"] = linkedin_watcher
+
+        # Gold Tier: Finance watcher
+        if _FINANCE_AVAILABLE and watcher_config.get("finance", {}).get("enabled", False):
+            fi_cfg = watcher_config.get("finance", {})
+            finance_watcher = FinanceWatcher(
+                vault_root=self._vault_root,
+                poll_interval=fi_cfg.get("poll_interval", 300),
+            )
+            self._watchers["finance_watcher"] = finance_watcher
+
+        # Gold Tier: Facebook watcher
+        if _FACEBOOK_AVAILABLE and watcher_config.get("facebook", {}).get("enabled", False):
+            fb_cfg = watcher_config.get("facebook", {})
+            facebook_watcher = FacebookWatcher(
+                vault_root=self._vault_root,
+                poll_interval=fb_cfg.get("poll_interval", 3600),
+            )
+            self._watchers["facebook_watcher"] = facebook_watcher
+
+        # Gold Tier: Twitter watcher
+        if _TWITTER_AVAILABLE and watcher_config.get("twitter", {}).get("enabled", False):
+            tw_cfg = watcher_config.get("twitter", {})
+            twitter_watcher = TwitterWatcher(
+                vault_root=self._vault_root,
+                poll_interval=tw_cfg.get("poll_interval", 86400),
+            )
+            self._watchers["twitter_watcher"] = twitter_watcher
 
     def _start_watchers(self) -> None:
         """Start all watchers as daemon threads."""
@@ -249,6 +322,12 @@ class Orchestrator:
         except Exception as e:
             print(f"  [dashboard] ERROR: {e}")
 
+        # Gold Tier: check for requires_ralph plans
+        try:
+            self._scan_cycle_ralph_check()
+        except Exception as e:
+            print(f"  [ralph]     ERROR: {e}")
+
     def start(self) -> None:
         """Start the orchestrator."""
         self._running = True
@@ -272,6 +351,14 @@ class Orchestrator:
             details=f"Started with {len(self._watchers)} watcher(s)",
         )
 
+        # Gold Tier: archive old audit logs on startup
+        if archive_old_logs is not None:
+            try:
+                retention = self._config.get("audit", {}).get("retention_days", 90)
+                archive_old_logs(self._vault_root, retention_days=retention)
+            except Exception:
+                pass
+
         self._start_watchers()
         self._start_monitor()
         print("[orchestrator] Watchers and monitor started")
@@ -292,6 +379,88 @@ class Orchestrator:
                 time.sleep(1)
 
         self._shutdown()
+
+    def _load_mcp_servers(self, mcp_yaml_path: str = "config/mcp_servers.yaml") -> list[Any]:
+        """Load MCP server definitions from config/mcp_servers.yaml.
+
+        Returns list of server config dicts, or [] if file not found.
+        """
+        if not os.path.isfile(mcp_yaml_path):
+            return []
+        try:
+            with open(mcp_yaml_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return data.get("mcp_servers", [])
+        except Exception:
+            return []
+
+    def _start_mcp_servers(self) -> None:
+        """Start MCP server subprocesses defined in config/mcp_servers.yaml.
+
+        In DEV_MODE (or when server is not available) this is a no-op.
+        Each server runs as a daemon subprocess; errors are logged but non-fatal.
+        """
+        dev_mode = os.environ.get("DEV_MODE", "").lower() in ("true", "1", "yes")
+        if dev_mode:
+            return
+        servers = self._load_mcp_servers()
+        for srv in servers:
+            try:
+                import subprocess
+                cmd = [srv.get("command", "python")] + list(srv.get("args", []))
+                proc = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                print(f"[orchestrator] MCP server '{srv.get('name')}' started (pid={proc.pid})")
+            except Exception as exc:
+                print(f"[orchestrator] MCP server '{srv.get('name')}' failed to start: {exc}")
+
+    def _scan_cycle_ralph_check(self) -> None:
+        """Detect plans with requires_ralph: true and delegate to RalphLoop."""
+        if not _RALPH_AVAILABLE or RalphLoop is None:
+            return
+        plans_dir = os.path.join(self._vault_root, "Plans")
+        if not os.path.isdir(plans_dir):
+            return
+        for fname in os.listdir(plans_dir):
+            if not fname.endswith(".md"):
+                continue
+            plan_path = os.path.join(plans_dir, fname)
+            try:
+                with open(plan_path, encoding="utf-8") as f:
+                    content = f.read()
+            except OSError:
+                continue
+            # Parse frontmatter
+            if not content.startswith("---"):
+                continue
+            parts = content.split("---", 2)
+            if len(parts) < 2:
+                continue
+            try:
+                import yaml as _yaml
+                meta = _yaml.safe_load(parts[1]) or {}
+            except Exception:
+                continue
+            if not meta.get("requires_ralph"):
+                continue
+            # Found a plan requiring Ralph — delegate to RalphLoop
+            max_iter = self._config.get("ralph_loop", {}).get("max_iterations", 10)
+            loop = RalphLoop(
+                vault_root=self._vault_root,
+                task_file=plan_path,
+                prompt=meta.get("prompt", ""),
+                max_iterations=max_iter,
+            )
+            try:
+                result = loop.run()
+                if result.get("status") == "done":
+                    print(f"  [ralph]     {fname} → done in {result.get('iterations', '?')} iterations")
+            except Exception as exc:
+                print(f"  [ralph]     ERROR running RalphLoop for {fname}: {exc}")
 
     def _shutdown(self) -> None:
         """Graceful shutdown."""
