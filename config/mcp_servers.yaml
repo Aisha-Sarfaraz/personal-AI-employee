@@ -1,0 +1,28 @@
+# MCP Server Registry — Gold Tier
+# All active MCP servers with health check configuration.
+# Orchestrator reads this file on startup to initialize subprocess clients.
+
+servers:
+  - name: email-mcp
+    command: python
+    args: ["-m", "src.mcp_servers.email_mcp.server"]
+    transport: stdio
+    env_vars:
+      - SMTP_HOST
+      - SMTP_PORT
+      - SMTP_USER
+      - SMTP_PASSWORD
+      - SMTP_FROM
+    health_check_interval_s: 60
+
+  - name: odoo-mcp
+    command: python
+    args: ["-m", "src.mcp_servers.odoo_mcp.server"]
+    transport: stdio
+    env_vars:
+      - ODOO_URL
+      - ODOO_DB
+      - ODOO_UID
+      - ODOO_PASSWORD
+      - DEV_MODE
+    health_check_interval_s: 60

@@ -1,0 +1,23 @@
+# Audit Logic Configuration — Gold Tier
+# Subscription patterns used by accounting_audit.py for CEO Briefing expense analysis.
+
+# Patterns matched against transaction description (case-insensitive substring match)
+SUBSCRIPTION_PATTERNS:
+  - "subscription"
+  - "monthly fee"
+  - "monthly plan"
+  - "saas"
+  - "recurring"
+  - "annual fee"
+  - "license fee"
+  - "software license"
+  - "hosting fee"
+  - "maintenance fee"
+  - "retainer"
+  - "membership"
+
+# Cost spike threshold: flag if current month average > prior month average by this factor
+COST_SPIKE_THRESHOLD: 1.20   # 20% increase
+
+# Inactivity threshold: flag subscriptions with no Odoo activity (in days)
+INACTIVITY_DAYS: 30

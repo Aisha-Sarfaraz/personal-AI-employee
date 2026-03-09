@@ -214,6 +214,7 @@ See `.specify/memory/constitution.md` for code quality, testing, performance, se
 ## Active Technologies
 - Python 3.10+ + watchdog (filesystem monitoring), pyyaml (YAML frontmatter), python-dotenv (env vars) (001-bronze-tier)
 - Local filesystem — Obsidian-compatible Markdown vault with YAML frontmatter (001-bronze-tier)
+- Local filesystem — Obsidian-compatible Markdown vault + JSON state files + JSON-Lines audit logs + Docker-hosted Odoo/PostgreSQL (003-gold-tier)
 
 ## Recent Changes
 - 001-bronze-tier: Added Python 3.10+ + watchdog (filesystem monitoring), pyyaml (YAML frontmatter), python-dotenv (env vars)

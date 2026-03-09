@@ -25,6 +25,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -1289,3 +1290,267 @@ class TestFilesystemWatcherMoveEvent:
         assert event_map.get("/watch/new_name.txt") == "created", (
             "dest_path must be queued as 'created'"
         )
+
+
+# ---------------------------------------------------------------------------
+# WatchdogMonitor — auto-restart tests (Documents.md §7.4)
+# ---------------------------------------------------------------------------
+
+
+class TestWatchdogMonitorAutoRestart:
+    """WatchdogMonitor must restart dead watcher threads via factory callbacks."""
+
+    def _make_vault(self, tmp_path: Path) -> str:
+        vault_root = tmp_path / "vault"
+        for folder in ("Logs", "state"):
+            (vault_root / folder).mkdir(parents=True, exist_ok=True)
+        return str(vault_root)
+
+    def test_detects_dead_thread_and_calls_factory(self, tmp_path: Path) -> None:
+        """When a watcher thread is dead and a factory is provided, factory must be called."""
+        import threading
+        from src.watchdog_monitor import WatchdogMonitor
+
+        dead_thread = threading.Thread(target=lambda: None, name="test_watcher")
+        dead_thread.start()
+        dead_thread.join()  # thread is now dead
+        assert not dead_thread.is_alive()
+
+        restarted: list[str] = []
+
+        def factory() -> threading.Thread:
+            t = threading.Thread(target=lambda: None, name="test_watcher_restarted")
+            t.start()
+            restarted.append("called")
+            return t
+
+        vault_root = self._make_vault(tmp_path)
+        monitor = WatchdogMonitor(
+            vault_root=vault_root,
+            watcher_threads={"test_watcher": dead_thread},
+            watcher_factories={"test_watcher": factory},
+        )
+
+        monitor.check_watcher_health()
+
+        assert restarted, "Factory must be called when watcher thread is dead."
+
+    def test_updates_thread_dict_after_restart(self, tmp_path: Path) -> None:
+        """After restart, watcher_threads dict must hold the new live thread."""
+        import threading
+        from src.watchdog_monitor import WatchdogMonitor
+
+        dead_thread = threading.Thread(target=lambda: None)
+        dead_thread.start()
+        dead_thread.join()
+
+        new_thread = threading.Thread(target=lambda: None, name="replaced")
+        new_thread.start()
+
+        vault_root = self._make_vault(tmp_path)
+        monitor = WatchdogMonitor(
+            vault_root=vault_root,
+            watcher_threads={"watcher_a": dead_thread},
+            watcher_factories={"watcher_a": lambda: new_thread},
+        )
+
+        monitor.check_watcher_health()
+
+        assert monitor.watcher_threads["watcher_a"] is new_thread, (
+            "watcher_threads must be updated to the new thread after restart."
+        )
+
+    def test_no_factory_still_logs_failure(self, tmp_path: Path) -> None:
+        """If no factory provided for dead thread, health check must still return False (no crash)."""
+        import threading
+        from src.watchdog_monitor import WatchdogMonitor
+
+        dead_thread = threading.Thread(target=lambda: None)
+        dead_thread.start()
+        dead_thread.join()
+
+        vault_root = self._make_vault(tmp_path)
+        monitor = WatchdogMonitor(
+            vault_root=vault_root,
+            watcher_threads={"watcher_b": dead_thread},
+            # no watcher_factories
+        )
+
+        health = monitor.check_watcher_health()
+        assert health["watcher_b"] is False, (
+            "Health must be False for dead thread even without factory."
+        )
+
+    def test_alive_thread_not_restarted(self, tmp_path: Path) -> None:
+        """Factory must NOT be called when thread is alive."""
+        import threading
+        from src.watchdog_monitor import WatchdogMonitor
+
+        started = threading.Event()
+        stop = threading.Event()
+
+        def long_runner() -> None:
+            started.set()
+            stop.wait(timeout=5)
+
+        live_thread = threading.Thread(target=long_runner, daemon=True)
+        live_thread.start()
+        started.wait(timeout=2)
+        assert live_thread.is_alive()
+
+        called: list[str] = []
+        factory_called = lambda: (called.append("x"), threading.Thread(target=lambda: None))[1]  # noqa: E731
+
+        vault_root = self._make_vault(tmp_path)
+        monitor = WatchdogMonitor(
+            vault_root=vault_root,
+            watcher_threads={"live_watcher": live_thread},
+            watcher_factories={"live_watcher": factory_called},
+        )
+
+        monitor.check_watcher_health()
+        stop.set()
+
+        assert not called, "Factory must NOT be called for a live thread."
+
+    def test_restart_writes_audit_log(self, tmp_path: Path) -> None:
+        """A restart must write an audit log entry to vault/Logs/."""
+        import threading
+        from src.watchdog_monitor import WatchdogMonitor
+
+        dead_thread = threading.Thread(target=lambda: None)
+        dead_thread.start()
+        dead_thread.join()
+
+        new_thread = threading.Thread(target=lambda: None)
+        new_thread.start()
+
+        vault_root = self._make_vault(tmp_path)
+        monitor = WatchdogMonitor(
+            vault_root=vault_root,
+            watcher_threads={"restarted_watcher": dead_thread},
+            watcher_factories={"restarted_watcher": lambda: new_thread},
+        )
+
+        monitor.check_watcher_health()
+
+        logs_dir = Path(vault_root) / "Logs"
+        log_files = list(logs_dir.glob("AUDIT_*.md"))
+        assert log_files, "An audit log entry must be written when a watcher is restarted."
+
+        content = log_files[0].read_text(encoding="utf-8")
+        assert "restart" in content.lower() or "restarted_watcher" in content, (
+            "Audit log must mention restart or watcher name."
+        )
+
+
+# ---------------------------------------------------------------------------
+# T010 — BaseWatcher dry_run + _load_mock_items extension tests
+# ---------------------------------------------------------------------------
+
+
+class TestBaseWatcherDryRun:
+    """BaseWatcher.dry_run property reads DRY_RUN env var."""
+
+    def _make_concrete(self, vault_root: str) -> "BaseWatcher":
+        class _Concrete(BaseWatcher):
+            def check_for_updates(self):
+                return []
+        return _Concrete(name="test_watcher", vault_root=vault_root, poll_interval=5)
+
+    def test_dry_run_false_by_default(self, tmp_path: Path) -> None:
+        """dry_run must be False when DRY_RUN env var is unset."""
+        import os
+        from src.watchers.base_watcher import BaseWatcher
+
+        vault = str(tmp_path / "vault")
+        Path(vault).mkdir()
+        w = self._make_concrete(vault)
+
+        env = {k: v for k, v in os.environ.items() if k != "DRY_RUN"}
+        with patch.dict(os.environ, env, clear=True):
+            # re-evaluate property
+            assert w.dry_run is False
+
+    def test_dry_run_true_from_env(self, tmp_path: Path) -> None:
+        """dry_run must be True when DRY_RUN=true (case-insensitive)."""
+        import os
+        from src.watchers.base_watcher import BaseWatcher
+
+        vault = str(tmp_path / "vault")
+        Path(vault).mkdir()
+        w = self._make_concrete(vault)
+
+        for val in ("true", "TRUE", "True", "1"):
+            with patch.dict(os.environ, {"DRY_RUN": val}):
+                assert w.dry_run is True, f"DRY_RUN={val!r} must set dry_run=True"
+
+
+class TestBaseWatcherLoadMockItems:
+    """BaseWatcher._load_mock_items reads *.json files from folder."""
+
+    def _make_concrete(self, vault_root: str) -> "BaseWatcher":
+        class _Concrete(BaseWatcher):
+            def check_for_updates(self):
+                return []
+        return _Concrete(name="test_watcher", vault_root=vault_root, poll_interval=5)
+
+    def test_load_mock_items_reads_json_files(self, tmp_path: Path) -> None:
+        """Must return list of dicts from all *.json files in folder."""
+        from src.watchers.base_watcher import BaseWatcher
+
+        mock_folder = tmp_path / "mock"
+        mock_folder.mkdir()
+        (mock_folder / "item1.json").write_text('{"id": "a", "body": "hello"}')
+        (mock_folder / "item2.json").write_text('{"id": "b", "body": "world"}')
+
+        vault = str(tmp_path / "vault")
+        Path(vault).mkdir()
+        w = self._make_concrete(vault)
+        items = w._load_mock_items(str(mock_folder))
+
+        assert len(items) == 2
+        ids = {item["id"] for item in items}
+        assert ids == {"a", "b"}
+
+    def test_load_mock_items_skips_malformed(self, tmp_path: Path) -> None:
+        """Malformed JSON files must be skipped silently."""
+        from src.watchers.base_watcher import BaseWatcher
+
+        mock_folder = tmp_path / "mock"
+        mock_folder.mkdir()
+        (mock_folder / "good.json").write_text('{"id": "ok"}')
+        (mock_folder / "bad.json").write_text("NOT JSON {{{{")
+
+        vault = str(tmp_path / "vault")
+        Path(vault).mkdir()
+        w = self._make_concrete(vault)
+        items = w._load_mock_items(str(mock_folder))
+
+        assert len(items) == 1
+        assert items[0]["id"] == "ok"
+
+    def test_load_mock_items_empty_folder(self, tmp_path: Path) -> None:
+        """Empty folder must return empty list."""
+        from src.watchers.base_watcher import BaseWatcher
+
+        mock_folder = tmp_path / "empty_mock"
+        mock_folder.mkdir()
+
+        vault = str(tmp_path / "vault")
+        Path(vault).mkdir()
+        w = self._make_concrete(vault)
+        items = w._load_mock_items(str(mock_folder))
+
+        assert items == []
+
+    def test_load_mock_items_missing_folder(self, tmp_path: Path) -> None:
+        """Missing folder must return empty list (not raise)."""
+        from src.watchers.base_watcher import BaseWatcher
+
+        vault = str(tmp_path / "vault")
+        Path(vault).mkdir()
+        w = self._make_concrete(vault)
+        items = w._load_mock_items(str(tmp_path / "does_not_exist"))
+
+        assert items == []

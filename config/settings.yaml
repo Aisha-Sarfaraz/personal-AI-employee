@@ -20,21 +20,106 @@ watchers:
     stability_wait: 2
   gmail:
     enabled: false
+    poll_interval: 120
+    mock_folder: "vault/Watch/gmail_mock"
+    max_results: 10
   whatsapp:
+    enabled: false               # set true after running setup_session()
+    poll_interval: 120
+    session_path: "vault/state/whatsapp_session"
+    mock_folder: "vault/Watch/whatsapp_mock"
+    keywords:
+      - "urgent"
+      - "asap"
+      - "invoice"
+      - "payment"
+      - "help"
+      - "quote"
+      - "price"
+      - "pricing"
+      - "interested"
+      - "contract"
+  linkedin:
     enabled: false
+    poll_interval: 3600
+    session_path: "vault/state/linkedin_session"
+    mock_folder: "vault/Watch/linkedin_mock"
+    username: ""
   finance:
     enabled: false
 
 orchestrator:
-  scan_interval: 30
+  scan_interval: 120
   max_plan_age_hours: 48
 
 approval:
-  expiry_hours: 24
+  expiry_hours: 48
   check_interval: 10
 
 dev_mode: true
 
+skills:
+  detect_lead:
+    enabled: true
+    keywords:
+      - "interested"
+      - "pricing"
+      - "quote"
+      - "proposal"
+      - "demo"
+      - "trial"
+      - "buy"
+      - "purchase"
+      - "contract"
+      - "invoice"
+  generate_linkedin_post:
+    enabled: true
+    frequency_days: 3
+  generate_plan:
+    enabled: true
+  weekly_briefing:
+    enabled: true
+
+rate_limits:
+  send_email: 20
+  post_social: 5
+  create_invoice: 10
+  default: 20
+
+idempotency:
+  ttl_hours: 24
+  state_file: "vault/state/idempotency.json"
+
 logging:
   level: "INFO"
   audit_format: "markdown"
+
+# Gold Tier additions
+odoo:
+  url: "${ODOO_URL:-http://localhost:8069}"
+  db: "${ODOO_DB:-fte_db}"
+  poll_interval_s: 300
+
+facebook:
+  enabled: false
+  frequency_days: 3
+  page_id: "${FACEBOOK_PAGE_ID}"
+  mock_folder: "vault/Watch/facebook_mock"
+
+twitter:
+  enabled: false
+  tweets_per_day: 1
+  user_id: "${TWITTER_USER_ID}"
+  mock_folder: "vault/Watch/twitter_mock"
+
+ralph_loop:
+  max_iterations: 10
+  state_file: "vault/state/ralph_loop_state.json"
+
+audit:
+  retention_days: 90
+  archive_dir: "vault/Logs/Archive"
+  json_log_dir: "vault/Logs"
+
+sla:
+  task_completion_hours: 48

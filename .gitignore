@@ -61,5 +61,8 @@ vault/Briefings/BRIEFING_*.md
 # LinkedIn session (credentials)
 vault/state/linkedin_session/
 
+# WhatsApp session (credentials)
+vault/state/whatsapp_session/
+
 # Gmail token (credentials)
 vault/.gmail_token.json

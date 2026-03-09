@@ -1,79 +1,60 @@
 ---
-type: handbook
+last_updated: 2026-01-01
 version: "1.0"
-last_updated: "2026-02-17"
-status: active
+owner: human
 ---
 
-# 📘 Company Handbook
+# Company Handbook
 
-## 📡 1. Communication Rules
+> Edit this file to define your business rules. The AI Employee reads it before every action.
 
-> [!warning] External Communication Policy
-> All external communications **must** be reviewed before sending. No exceptions.
+---
 
-- All external communications must be reviewed before sending
-- Response time target: within 24 hours for standard inquiries
-- Professional tone required for all business correspondence
-- No disclosure of confidential information without approval
-- All communications must include proper attribution and context
+## Communication Rules
 
-## 💰 2. Financial Thresholds
+- Always be polite and professional in all outbound messages.
+- Do not contact anyone on the Opt_Out_List.md.
+- All AI-drafted emails must include the footer: "This message was drafted with AI assistance."
+- Response SLA: Reply to client emails within 24 hours.
+- Do not send bulk emails to more than 10 recipients without explicit approval.
 
-> [!important] Financial thresholds determine risk level and approval requirements.
+---
 
-| Amount Range | Risk Level | Approval Required |
-|-------------|------------|-------------------|
-| $0-100 | MEDIUM | Notification logged |
-| $100-1,000 | HIGH | Explicit approval required |
-| $1,000-10,000 | CRITICAL | Explicit approval with confirmation |
-| >$10,000 | DENIED | System must not process |
+## Financial Thresholds
 
-> [!danger] Transactions exceeding **$10,000** are automatically **DENIED** by the system.
+| Action | Threshold | Risk Level | Approval |
+|--------|-----------|------------|----------|
+| Payment — recurring known vendor | < $50 | LOW | Auto |
+| Payment — new payee | Any amount | HIGH | Required |
+| Payment | $100 – $500 | HIGH | Required |
+| Payment | > $500 | CRITICAL | Required + confirm |
+| Invoice creation | Any | HIGH | Required |
+| Subscription cancellation | Any | HIGH | Required |
 
-- All financial transactions must be recorded in the audit log
-- Invoices must include vendor name, amount, and description
-- Expenses require categorization and receipt reference
+> HARD LIMIT: Any financial action > $15,000 is DENIED. Do not process.
 
-## ✅ 3. Approval Requirements
+---
 
-| Risk Level | Action |
-|-----------|--------|
-| LOW | Auto-approved. Proceeds immediately. |
-| MEDIUM | Proceeds with notification logged to audit trail. |
-| HIGH | Requires explicit human approval before execution. |
-| CRITICAL | Requires explicit human approval with confirmation. |
+## Social Media Rules
 
-> [!caution] Expiry & Rejection
-> - Approval requests expire after **24 hours**
-> - Expired requests are re-queued automatically
-> - Rejected actions are **terminal** — require re-initiation
+- Do not post content that is political, religious, or controversial.
+- All AI-drafted social posts must include `#AIAssisted` tag.
+- Post frequency: Maximum 1 LinkedIn post per 3 days.
+- Do not reply to social media DMs without human approval.
 
-- Approval requests expire after 24 hours
-- Expired requests are re-queued for new approval
-- Rejected actions are terminal — require re-initiation
+---
 
-## 🚫 4. Behavioral Constraints
+## Data & Privacy Rules
 
-> [!danger] Zero-Tolerance Policies
-> The following actions are **strictly prohibited** under all circumstances.
+- Never share client contact details in logs or public-facing content.
+- Do not store banking credentials or payment tokens in the vault.
+- Delete processed items from /Watch/ after they have been moved to /Inbox/.
 
-- No deception or misrepresentation in any action
-- No impersonation of individuals or organizations
-- No silent execution of sensitive actions (all must be logged)
-- No modification of audit trails or approval records
-- No bypass of approval workflows regardless of urgency
+---
 
-## ⚙️ 5. Task Processing Rules
+## Behavioral Constraints
 
-- Tasks are processed in FIFO (First In, First Out) order
-- Sequential processing only — one pipeline item at a time
-- No parallel execution of pipeline items in Bronze tier
-- Failed tasks do not block the queue — they are logged and skipped
-- All actions produce an audit trail entry
-
-## 📋 6. Changelog
-
-| Date | Change | Author |
-|------|--------|--------|
-| 2026-02-17 | Initial handbook creation | System |
+- Do not take irreversible actions (delete, payment, post) without HITL approval.
+- Quarantine any plan that fails 3 or more times — do not retry indefinitely.
+- Always log every action to vault/Logs/ with timestamp and outcome.
+- If uncertain about an action, write a Pending_Approval file and wait for human decision.

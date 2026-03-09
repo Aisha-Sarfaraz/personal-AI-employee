@@ -586,3 +586,199 @@ class TestResultStructure:
         )
         assert result["success"] is True
         assert result["simulated"] is True
+
+
+# ---------------------------------------------------------------------------
+# Silver Tier Tests (T021) — Safety guardrails on execute_action
+# ---------------------------------------------------------------------------
+
+
+class TestSendEmailSilverGuardrails:
+    """Tests for Silver Tier safety features: AI footer, opt-out, rate limit, idempotency."""
+
+    def test_send_email_appends_ai_disclosure_footer(self, tmp_path):
+        """Real mode (dev_mode=False): email body must include AI disclosure footer."""
+        from src.actions.action_executor import execute_action
+
+        (tmp_path / "state").mkdir()
+        (tmp_path / "Logs").mkdir()
+
+        captured_body = {}
+
+        def mock_mcp_send(**kwargs):
+            captured_body.update(kwargs)
+            return {"success": True, "message_id": "msg_001"}
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "src.actions.action_executor._call_email_mcp", side_effect=mock_mcp_send
+        ):
+            result = execute_action(
+                action_type="send_email",
+                details={"to": "user@example.com", "subject": "Hello", "body": "Original body"},
+                dev_mode=False,
+                vault_root=str(tmp_path),
+            )
+
+        assert result["success"] is True
+        assert result["simulated"] is False
+        sent_body = captured_body.get("body", "")
+        assert "AI assistance" in sent_body or "drafted with AI" in sent_body
+
+    def test_send_email_skips_opted_out_recipient(self, tmp_path):
+        """Opted-out email address must be skipped; result has success=False."""
+        from src.actions.action_executor import execute_action
+
+        (tmp_path / "state").mkdir()
+        (tmp_path / "Logs").mkdir()
+        opt_out_file = tmp_path / "Opt_Out_List.md"
+        opt_out_file.write_text("# Opt-Out List\n\n- optout@example.com\n", encoding="utf-8")
+
+        result = execute_action(
+            action_type="send_email",
+            details={"to": "optout@example.com", "subject": "Hi", "body": "Body"},
+            dev_mode=False,
+            vault_root=str(tmp_path),
+        )
+
+        assert result["success"] is False
+        assert "opted_out" in str(result.get("details", "")) or "opted_out" in str(result.get("reason", ""))
+
+    def test_send_email_queues_when_rate_limited(self, tmp_path):
+        """When rate limit is exceeded, action is queued and result has queued=True."""
+        from src.actions.action_executor import execute_action
+
+        (tmp_path / "state").mkdir()
+        (tmp_path / "Logs").mkdir()
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "src.actions.action_executor._check_rate_limit", return_value=False
+        ):
+            result = execute_action(
+                action_type="send_email",
+                details={"to": "user@example.com", "subject": "Rate limited", "body": "Body"},
+                dev_mode=False,
+                vault_root=str(tmp_path),
+            )
+
+        assert result.get("queued") is True or "rate_limited" in str(result.get("details", ""))
+
+    def test_send_email_uses_cached_idempotency_result(self, tmp_path):
+        """Second call with same details returns the cached result (idempotency)."""
+        from src.actions.action_executor import execute_action
+
+        (tmp_path / "state").mkdir()
+        (tmp_path / "Logs").mkdir()
+
+        cached = {"success": True, "action_type": "send_email", "details": "cached", "simulated": False}
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "src.actions.action_executor._idempotency_check_and_store",
+            return_value=(True, cached),
+        ):
+            result = execute_action(
+                action_type="send_email",
+                details={"to": "user@example.com", "subject": "Duplicate", "body": "Body"},
+                dev_mode=False,
+                vault_root=str(tmp_path),
+            )
+
+        assert result == cached
+
+    def test_send_email_real_mode_returns_simulated_false(self, tmp_path):
+        """Real mode (dev_mode=False) returns simulated=False in result dict."""
+        from src.actions.action_executor import execute_action
+
+        (tmp_path / "state").mkdir()
+        (tmp_path / "Logs").mkdir()
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "src.actions.action_executor._call_email_mcp",
+            return_value={"success": True, "message_id": "msg_002"},
+        ):
+            result = execute_action(
+                action_type="send_email",
+                details={"to": "user@example.com", "subject": "Real", "body": "Body"},
+                dev_mode=False,
+                vault_root=str(tmp_path),
+            )
+
+        assert result["simulated"] is False
+
+    def test_send_email_dev_mode_unchanged(self):
+        """dev_mode=True path is fully unchanged — simulated=True, no safety checks."""
+        from src.actions.action_executor import execute_action
+
+        result = execute_action(
+            action_type="send_email",
+            details={"to": "user@example.com", "subject": "Dev", "body": "Body"},
+            dev_mode=True,
+        )
+
+        assert result["success"] is True
+        assert result["simulated"] is True
+
+    def test_send_email_retries_with_exponential_backoff(self, tmp_path):
+        """MCP call failures trigger up to 3 retries with backoff; 3rd attempt succeeds."""
+        from src.actions.action_executor import execute_action
+
+        (tmp_path / "state").mkdir()
+        (tmp_path / "Logs").mkdir()
+
+        call_count = {"n": 0}
+
+        def flaky_mcp(**kwargs):
+            call_count["n"] += 1
+            if call_count["n"] < 3:
+                raise RuntimeError("transient failure")
+            return {"success": True, "message_id": "msg_003"}
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "src.actions.action_executor._call_email_mcp", side_effect=flaky_mcp
+        ):
+            with __import__("unittest.mock", fromlist=["patch"]).patch(
+                "time.sleep"
+            ):  # no real sleeping
+                result = execute_action(
+                    action_type="send_email",
+                    details={"to": "user@example.com", "subject": "Retry", "body": "Body"},
+                    dev_mode=False,
+                    vault_root=str(tmp_path),
+                )
+
+        assert result["success"] is True
+        assert call_count["n"] == 3
+
+
+class TestPostSocialSilverGuardrails:
+    """Silver Tier safety for post_social action."""
+
+    def test_post_social_simulation_mode(self):
+        """Simulation mode (dev_mode=True) returns simulated=True unchanged."""
+        from src.actions.action_executor import execute_action
+
+        result = execute_action(
+            action_type="post_social",
+            details={"platform": "linkedin", "content": "Hello world"},
+            dev_mode=True,
+        )
+
+        assert result["success"] is True
+        assert result["simulated"] is True
+
+    def test_post_social_queues_when_rate_limited(self, tmp_path):
+        """Rate-limited post_social action returns queued=True."""
+        from src.actions.action_executor import execute_action
+
+        (tmp_path / "state").mkdir()
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "src.actions.action_executor._check_rate_limit", return_value=False
+        ):
+            result = execute_action(
+                action_type="post_social",
+                details={"platform": "linkedin", "content": "Rate limited post"},
+                dev_mode=False,
+                vault_root=str(tmp_path),
+            )
+
+        assert result.get("queued") is True or "rate_limited" in str(result.get("details", ""))

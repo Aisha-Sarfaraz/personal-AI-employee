@@ -19,18 +19,55 @@ class WatchdogMonitor:
         watcher_threads: dict[str, threading.Thread],
         max_plan_age_hours: int = 48,
         check_interval: int = 60,
+        watcher_factories: dict[str, Any] | None = None,
     ) -> None:
         self.vault_root = vault_root
         self.watcher_threads = watcher_threads
         self.max_plan_age_hours = max_plan_age_hours
         self.check_interval = check_interval
+        self.watcher_factories: dict[str, Any] = watcher_factories or {}
         self._running = False
 
     def check_watcher_health(self) -> dict[str, bool]:
-        """Check if watcher threads are alive."""
+        """Check if watcher threads are alive; restart dead ones via factories (Documents.md §7.4)."""
         health: dict[str, bool] = {}
-        for name, thread in self.watcher_threads.items():
-            health[name] = thread.is_alive()
+        for name, thread in list(self.watcher_threads.items()):
+            alive = thread.is_alive()
+            health[name] = alive
+
+            if not alive:
+                factory = self.watcher_factories.get(name)
+                if factory is not None:
+                    try:
+                        new_thread = factory()
+                        self.watcher_threads[name] = new_thread
+                        log_action(
+                            vault_root=self.vault_root,
+                            agent="watchdog_monitor",
+                            action=f"restarted watcher thread: {name}",
+                            risk_tier="HIGH",
+                            status="success",
+                            details=f"Watcher {name} was dead; restarted via factory.",
+                        )
+                    except Exception as exc:
+                        log_action(
+                            vault_root=self.vault_root,
+                            agent="watchdog_monitor",
+                            action=f"failed to restart watcher: {name}",
+                            risk_tier="HIGH",
+                            status="failure",
+                            details=f"Factory raised: {exc}",
+                        )
+                else:
+                    log_action(
+                        vault_root=self.vault_root,
+                        agent="watchdog_monitor",
+                        action=f"watcher {name} is not alive",
+                        risk_tier="HIGH",
+                        status="failure",
+                        details=f"Watcher thread {name} has stopped. No factory registered.",
+                    )
+
         return health
 
     def check_stuck_plans(self) -> list[str]:
@@ -70,18 +107,8 @@ class WatchdogMonitor:
         """Main monitor loop."""
         self._running = True
         while self._running:
-            # Check watcher health
-            health = self.check_watcher_health()
-            for name, alive in health.items():
-                if not alive:
-                    log_action(
-                        vault_root=self.vault_root,
-                        agent="watchdog_monitor",
-                        action=f"watcher {name} is not alive",
-                        risk_tier="HIGH",
-                        status="failure",
-                        details=f"Watcher thread {name} has stopped",
-                    )
+            # Check watcher health (logging + restart handled inside check_watcher_health)
+            self.check_watcher_health()
 
             # Check for stuck plans
             stuck = self.check_stuck_plans()
